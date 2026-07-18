@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Jonnyskeys</string>
+    <string name="service_label">Jonnyskeys key mapper</string>
+    <string name="service_description">Maps a USB keyboard key to a touch on screen so games like Geometry Dash can be played with a keyboard. The service intercepts hardware key events and injects taps; it does not read screen content.</string>
+    <string name="status_running">Service: running ✓</string>
+    <string name="status_stopped">Service: NOT running — enable it in Accessibility settings</string>
+    <string name="setup_hint">1. Plug in the USB keyboard (OTG).\n2. Enable the Jonnyskeys service below.\n3. Press the mapped key to tap the screen — hold the key to hold the touch.</string>
+    <string name="open_accessibility_settings">Open Accessibility settings</string>
+    <string name="mapping_active">Mapping active</string>
+    <string name="mapped_key">Mapped key: %1$s (tap to change)</string>
+    <string name="press_any_key">Press a key on the keyboard…</string>
+    <string name="tap_x">Tap position X: %1$d%% of screen width</string>
+    <string name="tap_y">Tap position Y: %1$d%% of screen height</string>
+    <string name="gd_hint">For Geometry Dash any tap position works for jumping; the defaults (50%, 70%) avoid the pause button. Holding the key holds the touch, so ship and wave modes work too.</string>
+</resources>
