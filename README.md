@@ -44,6 +44,51 @@ The APK lands in `app/build/outputs/apk/debug/`. Install it with
   the screen. Any position works for Geometry Dash; the default (50%, 70%)
   stays clear of the pause button.
 
+## Publishing to Google Play
+
+The repo is set up to produce a Play-ready signed app bundle (`.aab`,
+targetSdk 35). What you need to do, in order:
+
+1. **Create an upload keystore** (once, on your own computer — keep it and
+   the passwords safe; losing it means you can't update the app):
+
+   ```
+   keytool -genkeypair -v -keystore upload.keystore -alias jonnyskeys \
+     -keyalg RSA -keysize 2048 -validity 10000
+   ```
+
+2. **Add the signing secrets** in GitHub → repo → Settings → Secrets and
+   variables → Actions:
+
+   - `ANDROID_KEYSTORE_BASE64` — output of `base64 -w0 upload.keystore`
+     (macOS: `base64 -i upload.keystore`)
+   - `ANDROID_KEYSTORE_PASSWORD`
+   - `ANDROID_KEY_ALIAS` — `jonnyskeys`
+   - `ANDROID_KEY_PASSWORD`
+
+   The next CI run's **play-bundle** job then produces the signed
+   `jonnyskeys-play-bundle` artifact (`app-release.aab`).
+
+3. **Create a Google Play developer account** at
+   https://play.google.com/console ($25 one-time, identity verification
+   required). Personal accounts must run a closed test with at least 12
+   testers for 14 days before they can publish to production.
+
+4. **Create the app** in Play Console, upload the `.aab`, and fill in the
+   listing (screenshots, 512×512 icon, feature graphic, descriptions).
+
+5. **Declarations Play will require:**
+   - *Privacy policy URL* — use this repo's `PRIVACY.md`
+     (e.g. `https://github.com/StinkyB4/Jonnyskeys/blob/main/PRIVACY.md`).
+   - *Accessibility API usage* — Play's app-content questionnaire asks why
+     the app uses an accessibility service. Answer honestly: it provides
+     alternative input (maps a hardware key to a touch gesture) because
+     the accessibility API is the only no-root way to inject touches; the
+     app reads no screen content and collects no data. Key-mapper apps
+     are allowed on Play with this declaration, but approval is Google's
+     call and can take a few review cycles.
+   - *Data safety form* — declare "no data collected or shared".
+
 ## Notes
 
 - The mapped key is consumed system-wide while the service is on, so flip

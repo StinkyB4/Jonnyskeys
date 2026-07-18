@@ -44,3 +44,54 @@ jobs:
             --notes "Debug-signed APK built from ${{ github.sha }}. Download jonnyskeys.apk below, copy it to your phone, and install it (allow installs from unknown sources)." \
             --target "${{ github.sha }}" || true
           gh release upload apk-latest jonnyskeys.apk --clobber
+
+  play-bundle:
+    # Builds the signed .aab for Google Play. Runs only once the signing
+    # secrets are configured in the repo settings (see README).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for signing secrets
+        id: secrets
+        env:
+          KS: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KS" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "Signing secrets not configured; skipping Play bundle."
+          fi
+
+      - name: Set up JDK 17
+        if: steps.secrets.outputs.present == 'true'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Gradle
+        if: steps.secrets.outputs.present == 'true'
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Decode keystore
+        if: steps.secrets.outputs.present == 'true'
+        run: echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/release.keystore"
+
+      - name: Build signed release bundle
+        if: steps.secrets.outputs.present == 'true'
+        env:
+          ANDROID_KEYSTORE_FILE: ${{ runner.temp }}/release.keystore
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          VERSION_CODE: ${{ github.run_number }}
+        run: ./gradlew bundleRelease --no-daemon
+
+      - name: Upload AAB artifact
+        if: steps.secrets.outputs.present == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: jonnyskeys-play-bundle
+          path: app/build/outputs/bundle/release/app-release.aab
