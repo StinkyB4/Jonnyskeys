@@ -1,6 +1,7 @@
 package com.jonnyskeys.keytap
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.Intent
 import android.os.Bundle
 import android.provider.Settings
@@ -33,7 +34,7 @@ class MainActivity : Activity() {
         val enabledSwitch = findViewById<Switch>(R.id.enabled_switch)
 
         findViewById<Button>(R.id.open_settings_button).setOnClickListener {
-            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            showDisclosureThenOpenSettings()
         }
 
         mapKeyButton.setOnClickListener {
@@ -91,6 +92,22 @@ class MainActivity : Activity() {
         )
         xLabel.text = getString(R.string.tap_x, Prefs.tapXPercent(this))
         yLabel.text = getString(R.string.tap_y, Prefs.tapYPercent(this))
+    }
+
+    /**
+     * Prominent disclosure required by Play policy for apps that use the
+     * accessibility API: explain what the service does and get consent
+     * before sending the user to system settings.
+     */
+    private fun showDisclosureThenOpenSettings() {
+        AlertDialog.Builder(this)
+            .setTitle(R.string.disclosure_title)
+            .setMessage(R.string.disclosure_body)
+            .setPositiveButton(R.string.disclosure_agree) { _, _ ->
+                startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            }
+            .setNegativeButton(R.string.disclosure_cancel, null)
+            .show()
     }
 
     private fun updateStatus() {

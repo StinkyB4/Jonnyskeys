@@ -75,7 +75,17 @@ targetSdk 35). What you need to do, in order:
    testers for 14 days before they can publish to production.
 
 4. **Create the app** in Play Console, upload the `.aab`, and fill in the
-   listing (screenshots, 512×512 icon, feature graphic, descriptions).
+   listing. Ready-made material is in `store/`: `icon-512.png`,
+   `feature-graphic.png`, and copy-paste descriptions plus declaration
+   answers in `store/listing.md`. Only screenshots need to be taken by
+   hand (any 2+ phone screenshots of the app).
+
+4b. **Optional — automatic deploys:** after the first manual `.aab`
+   upload, create a service account with access to the app (Play Console
+   → Users and permissions; Google Cloud → IAM → service account key
+   JSON) and store the JSON as the `PLAY_SERVICE_ACCOUNT_JSON` repo
+   secret. Every push then uploads the new build to the internal testing
+   track automatically.
 
 5. **Declarations Play will require:**
    - *Privacy policy URL* — use this repo's `PRIVACY.md`

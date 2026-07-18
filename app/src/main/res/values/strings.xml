@@ -11,6 +11,10 @@
     <string name="status_stopped">Service: NOT running — enable it in Accessibility settings</string>
     <string name="setup_hint">1. Plug in the USB keyboard (OTG).\n2. Enable the Jonnyskeys service below.\n3. Press the mapped key to tap the screen — hold the key to hold the touch.</string>
     <string name="open_accessibility_settings">Open Accessibility settings</string>
+    <string name="disclosure_title">How Jonnyskeys uses accessibility</string>
+    <string name="disclosure_body">Jonnyskeys uses Android\'s accessibility service to (1) detect presses of the one keyboard key you map and (2) inject a touch gesture at the position you choose, so touch-only games can be played with a USB keyboard.\n\nThe service does not read screen content, does not log your typing, and never sends any data off this device.\n\nOn the next screen, enable “Jonnyskeys key mapper” to continue.</string>
+    <string name="disclosure_agree">Agree &amp; continue</string>
+    <string name="disclosure_cancel">Cancel</string>
     <string name="mapping_active">Mapping active</string>
     <string name="mapped_key">Mapped key: %1$s (tap to change)</string>
     <string name="press_any_key">Press a key on the keyboard…</string>
