@@ -1,4 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="ic_launcher_background">#1B1E28</color>
+    <!-- Geometry Dash inspired palette -->
+    <color name="gd_bg_top">#1F71DE</color>
+    <color name="gd_bg_bottom">#0A1E63</color>
+    <color name="gd_panel">#99091542</color>
+    <color name="gd_panel_border">#4FC2FF</color>
+    <color name="gd_green">#6FE30E</color>
+    <color name="gd_green_dark">#2E7500</color>
+    <color name="gd_green_pressed">#4FB007</color>
+    <color name="gd_cyan">#4FE3FF</color>
+    <color name="gd_yellow">#FFD21F</color>
+    <color name="gd_orange">#FF8A1F</color>
+    <color name="gd_text">#FFFFFF</color>
+    <color name="gd_text_dim">#B9D4FF</color>
+    <color name="gd_track">#0A1745</color>
+    <color name="gd_outline">#081226</color>
+
+    <color name="ic_launcher_background">#0A1E63</color>
 </resources>

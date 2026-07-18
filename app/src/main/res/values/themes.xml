@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Jonnyskeys" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@drawable/bg_gd_gradient</item>
+        <item name="android:colorAccent">@color/gd_cyan</item>
+        <item name="android:textColorPrimary">@color/gd_text</item>
+        <item name="android:textColorSecondary">@color/gd_text_dim</item>
+        <item name="android:statusBarColor">@color/gd_bg_top</item>
+        <item name="android:navigationBarColor">@color/gd_bg_bottom</item>
+    </style>
+</resources>

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Square thumb, like a tiny GD cube. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <corners android:radius="5dp" />
+    <solid android:color="@color/gd_yellow" />
+    <stroke
+        android:width="3dp"
+        android:color="@color/gd_outline" />
+    <size
+        android:width="26dp"
+        android:height="26dp" />
+</shape>

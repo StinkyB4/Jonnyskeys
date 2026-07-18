@@ -94,10 +94,12 @@ class MainActivity : Activity() {
     }
 
     private fun updateStatus() {
-        statusText.text = if (KeyTapService.running) {
-            getString(R.string.status_running)
+        if (KeyTapService.running) {
+            statusText.text = getString(R.string.status_running)
+            statusText.setTextColor(getColor(R.color.gd_green))
         } else {
-            getString(R.string.status_stopped)
+            statusText.text = getString(R.string.status_stopped)
+            statusText.setTextColor(getColor(R.color.gd_orange))
         }
     }
 }

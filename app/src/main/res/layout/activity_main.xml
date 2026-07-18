@@ -7,70 +7,186 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="24dp">
+        android:padding="20dp">
 
+        <!-- Title, GD splash-screen style -->
         <TextView
-            android:id="@+id/status_text"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:textSize="18sp"
-            android:textStyle="bold" />
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:text="@string/setup_hint" />
-
-        <Button
-            android:id="@+id/open_settings_button"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
-            android:text="@string/open_accessibility_settings" />
-
-        <Switch
-            android:id="@+id/enabled_switch"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="24dp"
-            android:text="@string/mapping_active" />
-
-        <Button
-            android:id="@+id/map_key_button"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="24dp" />
+            android:gravity="center"
+            android:text="@string/title_caps"
+            android:textColor="@color/gd_yellow"
+            android:textSize="36sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.06"
+            android:shadowColor="@color/gd_outline"
+            android:shadowDx="0"
+            android:shadowDy="6"
+            android:shadowRadius="1" />
 
         <TextView
-            android:id="@+id/x_label"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="24dp" />
-
-        <SeekBar
-            android:id="@+id/x_seek"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:max="100" />
+            android:gravity="center"
+            android:text="@string/subtitle_caps"
+            android:textColor="@color/gd_cyan"
+            android:textSize="13sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.2" />
 
-        <TextView
-            android:id="@+id/y_label"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp" />
-
-        <SeekBar
-            android:id="@+id/y_seek"
+        <!-- Status / setup panel -->
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:max="100" />
+            android:layout_marginTop="20dp"
+            android:background="@drawable/panel_gd"
+            android:orientation="vertical"
+            android:padding="16dp">
 
-        <TextView
-            android:layout_width="wrap_content"
+            <TextView
+                android:id="@+id/status_text"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textSize="17sp"
+                android:textStyle="bold"
+                android:shadowColor="@color/gd_outline"
+                android:shadowDx="0"
+                android:shadowDy="3"
+                android:shadowRadius="1" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="@string/setup_hint"
+                android:textColor="@color/gd_text_dim" />
+
+            <Button
+                android:id="@+id/open_settings_button"
+                android:layout_width="match_parent"
+                android:layout_height="56dp"
+                android:layout_marginTop="12dp"
+                android:background="@drawable/btn_gd"
+                android:text="@string/open_accessibility_settings"
+                android:textColor="@color/gd_text"
+                android:textSize="15sp"
+                android:textStyle="bold"
+                android:shadowColor="@color/gd_outline"
+                android:shadowDx="0"
+                android:shadowDy="3"
+                android:shadowRadius="1" />
+
+            <Switch
+                android:id="@+id/enabled_switch"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:text="@string/mapping_active"
+                android:textColor="@color/gd_text"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                android:thumbTint="@color/switch_thumb_gd"
+                android:trackTint="@color/switch_track_gd" />
+
+        </LinearLayout>
+
+        <!-- Key mapping panel -->
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="24dp"
-            android:text="@string/gd_hint" />
+            android:layout_marginTop="16dp"
+            android:background="@drawable/panel_gd"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/section_key"
+                android:textColor="@color/gd_cyan"
+                android:textSize="13sp"
+                android:textStyle="bold"
+                android:letterSpacing="0.15" />
+
+            <Button
+                android:id="@+id/map_key_button"
+                android:layout_width="match_parent"
+                android:layout_height="56dp"
+                android:layout_marginTop="10dp"
+                android:background="@drawable/btn_gd"
+                android:textColor="@color/gd_text"
+                android:textSize="15sp"
+                android:textStyle="bold"
+                android:shadowColor="@color/gd_outline"
+                android:shadowDx="0"
+                android:shadowDy="3"
+                android:shadowRadius="1" />
+
+        </LinearLayout>
+
+        <!-- Tap position panel -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:background="@drawable/panel_gd"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/section_tap"
+                android:textColor="@color/gd_cyan"
+                android:textSize="13sp"
+                android:textStyle="bold"
+                android:letterSpacing="0.15" />
+
+            <TextView
+                android:id="@+id/x_label"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:textColor="@color/gd_text"
+                android:textStyle="bold" />
+
+            <SeekBar
+                android:id="@+id/x_seek"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:max="100"
+                android:progressDrawable="@drawable/seek_track_gd"
+                android:thumb="@drawable/seek_thumb_gd"
+                android:splitTrack="false" />
+
+            <TextView
+                android:id="@+id/y_label"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:textColor="@color/gd_text"
+                android:textStyle="bold" />
+
+            <SeekBar
+                android:id="@+id/y_seek"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:max="100"
+                android:progressDrawable="@drawable/seek_track_gd"
+                android:thumb="@drawable/seek_thumb_gd"
+                android:splitTrack="false" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:text="@string/gd_hint"
+                android:textColor="@color/gd_text_dim" />
+
+        </LinearLayout>
 
     </LinearLayout>
 </ScrollView>

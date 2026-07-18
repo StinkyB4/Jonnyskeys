@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Chunky GD-menu-style button: green fill, thick dark outline. -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_pressed="true">
+        <shape>
+            <corners android:radius="14dp" />
+            <gradient
+                android:angle="270"
+                android:startColor="@color/gd_green_pressed"
+                android:endColor="@color/gd_green_dark" />
+            <stroke
+                android:width="3dp"
+                android:color="@color/gd_outline" />
+        </shape>
+    </item>
+    <item>
+        <shape>
+            <corners android:radius="14dp" />
+            <gradient
+                android:angle="270"
+                android:startColor="@color/gd_green"
+                android:endColor="@color/gd_green_pressed" />
+            <stroke
+                android:width="3dp"
+                android:color="@color/gd_outline" />
+        </shape>
+    </item>
+</selector>

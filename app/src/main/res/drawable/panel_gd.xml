@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Translucent dark panel with a neon border, like GD's dialog boxes. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <corners android:radius="16dp" />
+    <solid android:color="@color/gd_panel" />
+    <stroke
+        android:width="2dp"
+        android:color="@color/gd_panel_border" />
+</shape>
