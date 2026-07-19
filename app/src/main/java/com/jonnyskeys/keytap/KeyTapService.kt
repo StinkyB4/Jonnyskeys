@@ -15,34 +15,37 @@ import android.view.accessibility.AccessibilityEvent
  * Intercepts hardware (USB) keyboard events system-wide and converts the mapped
  * key into an injected touch at a configurable screen position.
  *
- * Key down  -> touch down at the tap point (held via chained gesture strokes)
- * Key held  -> touch stays down (needed for ship/wave/hold mechanics in games)
- * Key up    -> touch up
+ * Tap mode (default): key down -> one complete tap (down + up in a single
+ * self-contained gesture). There is no separate release step, so the touch is
+ * structurally incapable of getting stuck. Auto-repeat fires repeated taps.
  *
- * Robust release: the finger is lifted the instant the mapped key is released.
- * Because a fast-paced game can occasionally swallow the hardware key-UP event
- * (which would otherwise leave the finger stuck down forever), a watchdog uses
- * the keyboard's auto-repeat as a heartbeat: while the key is physically held
- * the OS keeps re-sending ACTION_DOWN, so if that heartbeat stops without a
- * key-UP, the touch is force-released.
+ * Hold mode (optional): key down -> touch down, key held -> touch stays down
+ * (ship/wave/hold mechanics), key up -> touch up. Guarded by a watchdog that
+ * uses the keyboard's auto-repeat as a "still held" heartbeat and
+ * force-releases the touch if the key-UP event is ever lost.
  */
 class KeyTapService : AccessibilityService() {
 
     companion object {
         private const val TAG = "KeyTapService"
 
-        // A gesture stroke needs a finite duration, so a "hold" is built from
-        // short chained segments. Shorter segments = lower worst-case latency
-        // between key release and touch-up. 24ms is under one frame at 30fps.
+        // Tap mode: the whole tap (down + up) lives in one self-contained
+        // gesture of this duration, so there is no separate release step that
+        // could ever be missed. The game registers the press on touch-down.
+        private const val TAP_MS = 40L
+
+        // Hold mode: a gesture stroke needs a finite duration, so a "hold" is
+        // built from short chained segments. Shorter segments = lower
+        // worst-case latency between key release and touch-up.
         private const val HOLD_SEGMENT_MS = 24L
         private const val RELEASE_SEGMENT_MS = 1L
 
-        // If the auto-repeat heartbeat stops for longer than this without a
-        // key-UP, assume the UP was dropped and release the touch. Comfortably
-        // longer than a hardware key's ~50ms repeat interval, so genuine holds
-        // are never cut short, but short enough that a stuck finger recovers
-        // almost immediately.
-        private const val WATCHDOG_MS = 250L
+        // Hold-mode watchdogs. The keyboard's auto-repeat acts as a "still
+        // held" heartbeat. The initial window must outlast the OS's repeat
+        // delay (~500ms) so real holds aren't cut before the first repeat
+        // arrives; after repeats start, the window tightens.
+        private const val WATCHDOG_INITIAL_MS = 700L
+        private const val WATCHDOG_REPEAT_MS = 300L
 
         /** Set while the service is connected, so the UI can show live status. */
         @Volatile
@@ -89,13 +92,39 @@ class KeyTapService : AccessibilityService() {
         if (!Prefs.enabled(this)) return false
         if (event.keyCode != Prefs.keyCode(this)) return false
 
+        if (Prefs.holdMode(this)) {
+            handleHoldMode(event)
+        } else {
+            handleTapMode(event)
+        }
+        // Consume the event so the key doesn't also reach the foreground app.
+        return true
+    }
+
+    /**
+     * Default mode: every key press fires one complete, self-contained tap
+     * (touch down + up inside a single gesture). Nothing is left on screen
+     * waiting for a follow-up event, so the touch can never get stuck.
+     * Auto-repeat while the key is held fires repeated taps.
+     */
+    private fun handleTapMode(event: KeyEvent) {
+        if (event.action == KeyEvent.ACTION_DOWN) {
+            computeTapPoint()
+            val path = Path().apply { moveTo(tapX, tapY) }
+            val tap = GestureDescription.StrokeDescription(path, 0, TAP_MS, false)
+            dispatchGesture(GestureDescription.Builder().addStroke(tap).build(), null, null)
+        }
+    }
+
+    /** Optional mode: the touch stays held while the key is held. */
+    private fun handleHoldMode(event: KeyEvent) {
         when (event.action) {
             KeyEvent.ACTION_DOWN -> {
                 if (event.repeatCount == 0) {
-                    // First press: put the finger down immediately (lowest
-                    // possible latency).
+                    // First press: put the finger down immediately.
                     if (!keyHeld) {
                         keyHeld = true
+                        armWatchdog(WATCHDOG_INITIAL_MS)
                         // If a release from a previous press is still in flight,
                         // resume that finger instead of starting a second,
                         // concurrent gesture.
@@ -106,7 +135,7 @@ class KeyTapService : AccessibilityService() {
                 } else {
                     // Auto-repeat: proof the key is still physically held.
                     // Reset the watchdog so a genuine hold is never cut short.
-                    armWatchdog()
+                    armWatchdog(WATCHDOG_REPEAT_MS)
                 }
             }
             KeyEvent.ACTION_UP -> {
@@ -115,13 +144,11 @@ class KeyTapService : AccessibilityService() {
                 beginRelease()
             }
         }
-        // Consume the event so the key doesn't also reach the foreground app.
-        return true
     }
 
-    private fun armWatchdog() {
+    private fun armWatchdog(delayMs: Long) {
         handler.removeCallbacks(watchdog)
-        handler.postDelayed(watchdog, WATCHDOG_MS)
+        handler.postDelayed(watchdog, delayMs)
     }
 
     /**
