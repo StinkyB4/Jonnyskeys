@@ -62,12 +62,6 @@ class MainActivity : Activity() {
             Prefs.setEnabled(this, checked)
         }
 
-        val holdModeSwitch = findViewById<Switch>(R.id.hold_mode_switch)
-        holdModeSwitch.isChecked = Prefs.holdMode(this)
-        holdModeSwitch.setOnCheckedChangeListener { _, checked ->
-            Prefs.setHoldMode(this, checked)
-        }
-
         updateLabels()
     }
 

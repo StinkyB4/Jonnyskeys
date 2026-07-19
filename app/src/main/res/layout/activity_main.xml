@@ -123,25 +123,6 @@
                 android:shadowDy="3"
                 android:shadowRadius="1" />
 
-            <Switch
-                android:id="@+id/hold_mode_switch"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="14dp"
-                android:text="@string/hold_mode"
-                android:textColor="@color/gd_text"
-                android:textSize="16sp"
-                android:textStyle="bold"
-                android:thumbTint="@color/switch_thumb_gd"
-                android:trackTint="@color/switch_track_gd" />
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="6dp"
-                android:text="@string/hold_mode_hint"
-                android:textColor="@color/gd_text_dim" />
-
         </LinearLayout>
 
         <!-- Tap position panel -->

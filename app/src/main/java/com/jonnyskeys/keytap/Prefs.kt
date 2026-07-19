@@ -14,7 +14,6 @@ object Prefs {
     private const val KEY_TAP_X_PCT = "tap_x_pct"
     private const val KEY_TAP_Y_PCT = "tap_y_pct"
     private const val KEY_ENABLED = "enabled"
-    private const val KEY_HOLD_MODE = "hold_mode"
 
     fun get(context: Context): SharedPreferences =
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
@@ -37,13 +36,4 @@ object Prefs {
 
     fun setEnabled(context: Context, enabled: Boolean) =
         get(context).edit().putBoolean(KEY_ENABLED, enabled).apply()
-
-    /**
-     * Off (default): every key press fires one self-contained tap — can never
-     * get stuck. On: the touch is held for as long as the key is held.
-     */
-    fun holdMode(context: Context): Boolean = get(context).getBoolean(KEY_HOLD_MODE, false)
-
-    fun setHoldMode(context: Context, hold: Boolean) =
-        get(context).edit().putBoolean(KEY_HOLD_MODE, hold).apply()
 }

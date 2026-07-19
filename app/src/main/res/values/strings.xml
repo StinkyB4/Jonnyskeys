@@ -16,8 +16,6 @@
     <string name="disclosure_agree">Agree &amp; continue</string>
     <string name="disclosure_cancel">Cancel</string>
     <string name="mapping_active">Mapping active</string>
-    <string name="hold_mode">Hold mode</string>
-    <string name="hold_mode_hint">Off: every key press is one instant tap (press + release) — most reliable, best for jumping. On: the touch stays held while the key is held (ship / wave modes).</string>
     <string name="mapped_key">Mapped key: %1$s (tap to change)</string>
     <string name="press_any_key">Press a key on the keyboard…</string>
     <string name="tap_x">Tap position X: %1$d%% of screen width</string>
