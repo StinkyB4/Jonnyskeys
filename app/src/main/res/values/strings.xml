@@ -5,6 +5,11 @@
     <string name="subtitle_caps">GEOMETRY DASH KEY MAPPER</string>
     <string name="section_key">KEY BINDING</string>
     <string name="section_tap">TAP POSITION</string>
+    <string name="section_diag">DIAGNOSTICS</string>
+    <string name="diag_hint">Live log of every key and touch event. If input ever sticks in a game, come straight back here and tap COPY — the last lines show exactly what happened.</string>
+    <string name="diag_copy">Copy</string>
+    <string name="diag_clear">Clear</string>
+    <string name="diag_copied">Log copied to clipboard</string>
     <string name="service_label">Jonnyskeys key mapper</string>
     <string name="service_description">Maps a USB keyboard key to a touch on screen so games like Geometry Dash can be played with a keyboard. The service intercepts hardware key events and injects taps; it does not read screen content.</string>
     <string name="status_running">Service: running ✓</string>
