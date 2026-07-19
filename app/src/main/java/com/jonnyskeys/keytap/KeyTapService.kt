@@ -62,7 +62,26 @@ class KeyTapService : AccessibilityService() {
             private set
     }
 
+    /**
+     * Injection pipeline state. Everything is strictly serialized: a new
+     * gesture is only ever dispatched when the previous one has finished
+     * (completed or cancelled), because dispatching over an in-flight gesture
+     * turns its ending into an ACTION_CANCEL that the game ignores.
+     */
+    private enum class State {
+        /** No injected touch on screen. */
+        IDLE,
+
+        /** Finger is down; hold segments are being chained. */
+        HOLDING,
+
+        /** The finishing (touch-up) segment is in flight. */
+        LIFTING,
+    }
+
     private val handler = Handler(Looper.getMainLooper())
+
+    private var state = State.IDLE
 
     /** The stroke currently on screen, needed to continue or finish the hold. */
     private var activeStroke: GestureDescription.StrokeDescription? = null
@@ -83,6 +102,7 @@ class KeyTapService : AccessibilityService() {
     private val rescue = Runnable {
         Log.w(TAG, "Gesture chain stalled; dispatching rescue tap")
         activeStroke = null
+        state = State.IDLE
         dispatchRescueTap()
     }
 
@@ -114,13 +134,19 @@ class KeyTapService : AccessibilityService() {
                 if (event.repeatCount == 0) {
                     if (!keyHeld) {
                         keyHeld = true
-                        handler.removeCallbacks(rescue)
                         armWatchdog(WATCHDOG_INITIAL_MS)
-                        // If the previous press's stroke is still on screen
-                        // (lift not yet dispatched), simply keep holding it;
-                        // otherwise plant a fresh finger.
-                        if (activeStroke == null) {
-                            touchDown()
+                        when (state) {
+                            // Nothing on screen: plant the finger now.
+                            State.IDLE -> touchDown()
+                            // Previous press's stroke is still on screen and
+                            // its lift hasn't been dispatched yet: just keep
+                            // holding it — the chain sees keyHeld again.
+                            State.HOLDING -> handler.removeCallbacks(rescue)
+                            // The lift is in flight. Do NOT dispatch over it
+                            // (that would cancel it and lose its touch-up);
+                            // the lift's onCompleted sees keyHeld and plants
+                            // the new press immediately after.
+                            State.LIFTING -> {}
                         }
                     }
                 } else {
@@ -150,7 +176,7 @@ class KeyTapService : AccessibilityService() {
     private fun requestRelease() {
         if (!keyHeld) return
         keyHeld = false
-        if (activeStroke != null) {
+        if (state == State.HOLDING) {
             handler.removeCallbacks(rescue)
             handler.postDelayed(rescue, RESCUE_TIMEOUT_MS)
         }
@@ -161,25 +187,45 @@ class KeyTapService : AccessibilityService() {
         val path = Path().apply { moveTo(tapX, tapY) }
         val stroke = GestureDescription.StrokeDescription(path, 0, HOLD_SEGMENT_MS, true)
         activeStroke = stroke
+        state = State.HOLDING
         dispatch(stroke, holdCallback)
     }
 
     private val holdCallback = object : GestureResultCallback() {
         override fun onCompleted(gestureDescription: GestureDescription?) {
-            val stroke = activeStroke ?: return
-            val path = Path().apply { moveTo(tapX, tapY) }
-            if (keyHeld) {
-                // Key still down: splice on the next hold segment.
-                val next = stroke.continueStroke(path, 0, HOLD_SEGMENT_MS, true)
-                activeStroke = next
-                dispatch(next, this)
-            } else {
-                // Key released: splice on the finishing segment, which ends
-                // with a genuine ACTION_UP.
-                handler.removeCallbacks(rescue)
-                activeStroke = null
-                val end = stroke.continueStroke(path, 0, RELEASE_SEGMENT_MS, false)
-                dispatch(end, this)
+            when (state) {
+                State.HOLDING -> {
+                    val stroke = activeStroke ?: return
+                    val path = Path().apply { moveTo(tapX, tapY) }
+                    if (keyHeld) {
+                        // Key still down: splice on the next hold segment.
+                        val next = stroke.continueStroke(path, 0, HOLD_SEGMENT_MS, true)
+                        activeStroke = next
+                        dispatch(next, this)
+                    } else {
+                        // Key released: splice on the finishing segment,
+                        // which ends with a genuine ACTION_UP. Keep the
+                        // rescue deadline armed until the touch-up is
+                        // confirmed by the lift's own callback.
+                        activeStroke = null
+                        state = State.LIFTING
+                        val end = stroke.continueStroke(path, 0, RELEASE_SEGMENT_MS, false)
+                        dispatch(end, this)
+                        handler.removeCallbacks(rescue)
+                        handler.postDelayed(rescue, RESCUE_TIMEOUT_MS)
+                    }
+                }
+                State.LIFTING -> {
+                    // The touch-up made it to the screen.
+                    handler.removeCallbacks(rescue)
+                    state = State.IDLE
+                    // If the key was pressed again while the lift was in
+                    // flight, the press was deferred to here: plant it now.
+                    if (keyHeld) {
+                        touchDown()
+                    }
+                }
+                State.IDLE -> {}
             }
         }
 
@@ -188,12 +234,14 @@ class KeyTapService : AccessibilityService() {
             // finger is stuck down, because it ignores ACTION_CANCEL.
             handler.removeCallbacks(rescue)
             activeStroke = null
+            state = State.IDLE
             if (keyHeld) {
                 // Key still physically down: re-plant the touch. The fresh
                 // pointer reuses the same id and supersedes the stale one.
                 touchDown()
             } else {
-                // We were lifting: clear the phantom held finger with a
+                // We were holding or lifting and lost the pointer without a
+                // proper touch-up: clear the phantom held finger with a
                 // complete down+up tap.
                 dispatchRescueTap()
             }
@@ -222,6 +270,7 @@ class KeyTapService : AccessibilityService() {
             Log.w(TAG, "dispatchGesture returned false")
             activeStroke = null
             keyHeld = false
+            state = State.IDLE
             handler.removeCallbacks(rescue)
         }
     }
