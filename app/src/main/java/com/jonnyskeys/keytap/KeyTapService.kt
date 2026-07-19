@@ -6,6 +6,7 @@ import android.graphics.Path
 import android.graphics.Point
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.view.KeyEvent
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
@@ -15,43 +16,47 @@ import android.view.accessibility.AccessibilityEvent
  * key into an injected touch at a configurable screen position, behaving like a
  * real finger: key down = touch down, key held = touch held, key up = touch up.
  *
- * Hard-won reliability rules (the game ignores touch-CANCEL events, so a
- * cancelled injection leaves it believing the finger is still down):
+ * EMUI-safe design. Diagnostics from a Huawei P30 Pro showed EMUI cancels any
+ * gesture that uses stroke continuation (willContinue) within ~3ms of
+ * dispatch, so a hold can never be built by chaining segments there. Plain
+ * one-shot strokes, however, run reliably. Therefore:
  *
- * 1. Never dispatch a gesture while another is in flight — interrupting an
- *    injected gesture makes Android emit ACTION_CANCEL instead of ACTION_UP.
- *    The hold is chained from short segments, and both the next segment and
- *    the final lift are dispatched only from onCompleted, the one point where
- *    continuation is guaranteed to splice without a cancel.
- * 2. If our gesture is cancelled anyway (e.g. the screen was touched during
- *    play) while the key is still held, re-plant the touch: the new pointer
- *    reuses the same pointer id, which overwrites the game's stale "held"
- *    state and keeps the player's input alive.
- * 3. If the gesture was cancelled when the finger should be lifting, dispatch
- *    a rescue tap: a complete down+up with the same pointer id, which clears
- *    the game's phantom held finger.
- * 4. If the chain goes silent entirely (no callback within a deadline after a
- *    lift was requested), assume it is dead and fire the rescue tap.
- * 5. A watchdog force-releases if the key-UP event itself is lost, using the
- *    keyboard's auto-repeat as a "still physically held" heartbeat.
+ * - A press dispatches ONE plain stroke with a long preset duration
+ *   (MAX_HOLD_MS). The pointer goes down immediately and simply stays down.
+ *   No continuations are used anywhere.
+ * - Release works by superseding: dispatching any new gesture makes the
+ *   injector end the in-flight hold. The release gesture ("terminator") has
+ *   its stroke delayed far into the future, so it kills the hold instantly
+ *   while never touching the screen itself.
+ * - A parked terminator would eventually fire its stroke as a stray tap, so
+ *   while parked it is refreshed (re-dispatched, which silently cancels the
+ *   old one) long before its delay elapses. The next real key press also
+ *   supersedes it silently.
+ * - A watchdog force-releases if the key-UP event is lost, using auto-repeat
+ *   as a "still physically held" heartbeat.
  */
 class KeyTapService : AccessibilityService() {
 
     companion object {
-        // Hold segment length. The lift can only happen at a segment boundary
-        // (rule 1), so this is also the worst-case release latency.
-        private const val HOLD_SEGMENT_MS = 50L
-        private const val RELEASE_SEGMENT_MS = 1L
+        // Maximum length of a single hold; the system caps gestures at 60s.
+        private const val MAX_HOLD_MS = 59_000L
 
-        // If no gesture callback arrives within this window after a lift was
-        // requested, the chain is presumed dead and a rescue tap is fired.
-        private const val RESCUE_TIMEOUT_MS = 250L
+        // The terminator's stroke starts this far in the future. It exists to
+        // supersede the hold, and is always refreshed or replaced before this
+        // delay elapses, so the stroke itself never plays.
+        private const val TERMINATOR_START_MS = 59_000L
+        private const val TERMINATOR_DURATION_MS = 1L
+        private const val TERMINATOR_REFRESH_MS = 45_000L
 
-        // Watchdog windows for a lost key-UP. The initial window outlasts the
-        // OS auto-repeat delay (~500ms) so real holds aren't cut short before
-        // the first repeat arrives; once repeats flow, the window tightens.
-        private const val WATCHDOG_INITIAL_MS = 700L
-        private const val WATCHDOG_REPEAT_MS = 300L
+        // Minimum spacing between automatic re-plants after an external
+        // cancel, so a device that cancels everything can never cause a
+        // machine-gun loop of touch-downs again.
+        private const val REPLANT_MIN_INTERVAL_MS = 100L
+
+        // Watchdog for a lost key-UP. Generous initial window so genuine long
+        // holds are never cut short if auto-repeat is late or sparse.
+        private const val WATCHDOG_INITIAL_MS = 1_500L
+        private const val WATCHDOG_REPEAT_MS = 400L
 
         /** Set while the service is connected, so the UI can show live status. */
         @Volatile
@@ -59,32 +64,26 @@ class KeyTapService : AccessibilityService() {
             private set
     }
 
-    /**
-     * Injection pipeline state. Everything is strictly serialized: a new
-     * gesture is only ever dispatched when the previous one has finished
-     * (completed or cancelled), because dispatching over an in-flight gesture
-     * turns its ending into an ACTION_CANCEL that the game ignores.
-     */
     private enum class State {
-        /** No injected touch on screen. */
+        /** Nothing in flight: no touch on screen, no parked terminator. */
         IDLE,
 
-        /** Finger is down; hold segments are being chained. */
+        /** The long hold stroke is in flight; the pointer is down. */
         HOLDING,
 
-        /** The finishing (touch-up) segment is in flight. */
-        LIFTING,
+        /** Released: a terminator is parked, silently pending. */
+        PARKED,
     }
 
     private val handler = Handler(Looper.getMainLooper())
 
     private var state = State.IDLE
 
-    /** The stroke currently on screen, needed to continue or finish the hold. */
-    private var activeStroke: GestureDescription.StrokeDescription? = null
-
     /** True from key-down until key-up (or watchdog release). */
     private var keyHeld = false
+
+    /** When the hold stroke was last dispatched (re-plant rate limiting). */
+    private var lastPlantAt = 0L
 
     private var tapX = 0f
     private var tapY = 0f
@@ -95,24 +94,27 @@ class KeyTapService : AccessibilityService() {
         requestRelease()
     }
 
-    /** Fires only if the gesture chain went silent after a lift was requested. */
-    private val rescue = Runnable {
-        DebugLog.log("RESCUE_TIMEOUT (state=$state)")
-        activeStroke = null
-        state = State.IDLE
-        dispatchRescueTap()
+    /** Keeps the parked terminator fresh so its stroke never actually plays. */
+    private val refreshTerminator = object : Runnable {
+        override fun run() {
+            if (state == State.PARKED) {
+                DebugLog.log("TERMINATOR_REFRESH")
+                dispatchTerminator()
+                handler.postDelayed(this, TERMINATOR_REFRESH_MS)
+            }
+        }
     }
 
     override fun onServiceConnected() {
         super.onServiceConnected()
         running = true
-        DebugLog.log("SERVICE_CONNECTED")
+        DebugLog.log("SERVICE_CONNECTED (single-stroke hold engine)")
     }
 
     override fun onDestroy() {
         running = false
         handler.removeCallbacks(watchdog)
-        handler.removeCallbacks(rescue)
+        handler.removeCallbacks(refreshTerminator)
         super.onDestroy()
     }
 
@@ -133,23 +135,13 @@ class KeyTapService : AccessibilityService() {
                         keyHeld = true
                         DebugLog.log("KEY_DOWN (state=$state)")
                         armWatchdog(WATCHDOG_INITIAL_MS)
-                        when (state) {
-                            // Nothing on screen: plant the finger now.
-                            State.IDLE -> touchDown()
-                            // Previous press's stroke is still on screen and
-                            // its lift hasn't been dispatched yet: just keep
-                            // holding it — the chain sees keyHeld again.
-                            State.HOLDING -> handler.removeCallbacks(rescue)
-                            // The lift is in flight. Do NOT dispatch over it
-                            // (that would cancel it and lose its touch-up);
-                            // the lift's onCompleted sees keyHeld and plants
-                            // the new press immediately after.
-                            State.LIFTING -> {}
-                        }
+                        // Dispatching the hold also silently supersedes any
+                        // parked terminator.
+                        handler.removeCallbacks(refreshTerminator)
+                        dispatchHold()
                     }
                 } else {
                     // Auto-repeat: proof the key is still physically held.
-                    DebugLog.log("KEY_REPEAT")
                     armWatchdog(WATCHDOG_REPEAT_MS)
                 }
             }
@@ -168,115 +160,107 @@ class KeyTapService : AccessibilityService() {
         handler.postDelayed(watchdog, delayMs)
     }
 
-    /**
-     * Ask for the finger to lift at the next segment boundary (rule 1: never
-     * interrupt an in-flight gesture). A deadline timer backs this up in case
-     * the chain never calls back.
-     */
     private fun requestRelease() {
         if (!keyHeld) return
         keyHeld = false
         if (state == State.HOLDING) {
-            handler.removeCallbacks(rescue)
-            handler.postDelayed(rescue, RESCUE_TIMEOUT_MS)
+            // Park a terminator: this supersedes the hold stroke immediately
+            // (the game sees the touch end now) without playing any touch of
+            // its own.
+            state = State.PARKED
+            DebugLog.log("DISPATCH terminator (release)")
+            dispatchTerminator()
+            handler.postDelayed(refreshTerminator, TERMINATOR_REFRESH_MS)
         }
     }
 
-    private fun touchDown() {
+    private fun dispatchHold() {
         computeTapPoint()
         val path = Path().apply { moveTo(tapX, tapY) }
-        val stroke = GestureDescription.StrokeDescription(path, 0, HOLD_SEGMENT_MS, true)
-        activeStroke = stroke
+        val stroke = GestureDescription.StrokeDescription(path, 0, MAX_HOLD_MS, false)
         state = State.HOLDING
-        DebugLog.log("DISPATCH touch-down")
-        dispatch(stroke, holdCallback)
+        lastPlantAt = SystemClock.uptimeMillis()
+        DebugLog.log("DISPATCH hold-down")
+        if (!dispatchGesture(
+                GestureDescription.Builder().addStroke(stroke).build(),
+                holdCallback,
+                null
+            )
+        ) {
+            DebugLog.log("DISPATCH_REJECTED hold")
+            state = State.IDLE
+            keyHeld = false
+        }
+    }
+
+    private fun dispatchTerminator() {
+        val path = Path().apply { moveTo(tapX, tapY) }
+        val stroke = GestureDescription.StrokeDescription(
+            path, TERMINATOR_START_MS, TERMINATOR_DURATION_MS, false
+        )
+        if (!dispatchGesture(
+                GestureDescription.Builder().addStroke(stroke).build(),
+                terminatorCallback,
+                null
+            )
+        ) {
+            // Very bad: the hold could run to its full duration. Retry once.
+            DebugLog.log("DISPATCH_REJECTED terminator; retrying")
+            handler.post {
+                if (state == State.PARKED) dispatchTerminator()
+            }
+        }
     }
 
     private val holdCallback = object : GestureResultCallback() {
         override fun onCompleted(gestureDescription: GestureDescription?) {
-            when (state) {
-                State.HOLDING -> {
-                    val stroke = activeStroke ?: return
-                    val path = Path().apply { moveTo(tapX, tapY) }
-                    if (keyHeld) {
-                        // Key still down: splice on the next hold segment.
-                        val next = stroke.continueStroke(path, 0, HOLD_SEGMENT_MS, true)
-                        activeStroke = next
-                        dispatch(next, this)  // hold segments are frequent; not logged
-                    } else {
-                        // Key released: splice on the finishing segment,
-                        // which ends with a genuine ACTION_UP. Keep the
-                        // rescue deadline armed until the touch-up is
-                        // confirmed by the lift's own callback.
-                        activeStroke = null
-                        state = State.LIFTING
-                        DebugLog.log("DISPATCH lift")
-                        val end = stroke.continueStroke(path, 0, RELEASE_SEGMENT_MS, false)
-                        dispatch(end, this)
-                        handler.removeCallbacks(rescue)
-                        handler.postDelayed(rescue, RESCUE_TIMEOUT_MS)
-                    }
+            // The hold ran its full MAX_HOLD_MS and lifted on its own.
+            DebugLog.log("HOLD_COMPLETED (max duration reached, state=$state)")
+            if (state == State.HOLDING) {
+                state = State.IDLE
+                if (keyHeld) {
+                    // Key is still physically down: put the finger back.
+                    dispatchHold()
                 }
-                State.LIFTING -> {
-                    // The touch-up made it to the screen.
-                    DebugLog.log("LIFT_COMPLETED touch-up delivered")
-                    handler.removeCallbacks(rescue)
-                    state = State.IDLE
-                    // If the key was pressed again while the lift was in
-                    // flight, the press was deferred to here: plant it now.
-                    if (keyHeld) {
-                        touchDown()
-                    }
-                }
-                State.IDLE -> {}
             }
         }
 
         override fun onCancelled(gestureDescription: GestureDescription?) {
-            // Something cancelled our injection; the game may now believe the
-            // finger is stuck down, because it ignores ACTION_CANCEL.
-            DebugLog.log("CANCELLED (state=$state keyHeld=$keyHeld)")
-            handler.removeCallbacks(rescue)
-            activeStroke = null
-            state = State.IDLE
-            if (keyHeld) {
-                // Key still physically down: re-plant the touch. The fresh
-                // pointer reuses the same id and supersedes the stale one.
-                touchDown()
+            if (state != State.HOLDING) {
+                // Expected: we superseded this hold ourselves with a
+                // terminator (release) or a new hold.
+                DebugLog.log("HOLD_SUPERSEDED (expected)")
+                return
+            }
+            // External cancel (screen touched, system interference) while the
+            // key is still held: re-plant once, but never faster than the
+            // rate limit — a device that cancels everything must not turn
+            // this into a rapid-fire loop.
+            DebugLog.log("HOLD_CANCELLED externally (keyHeld=$keyHeld)")
+            if (keyHeld &&
+                SystemClock.uptimeMillis() - lastPlantAt >= REPLANT_MIN_INTERVAL_MS
+            ) {
+                dispatchHold()
             } else {
-                // We were holding or lifting and lost the pointer without a
-                // proper touch-up: clear the phantom held finger with a
-                // complete down+up tap.
-                dispatchRescueTap()
+                state = State.IDLE
             }
         }
     }
 
-    /**
-     * A complete, self-contained 1ms tap. Ends in a genuine ACTION_UP with the
-     * same pointer id as everything else we inject, which overwrites and
-     * clears any phantom "held finger" the game is tracking.
-     */
-    private fun dispatchRescueTap() {
-        DebugLog.log("DISPATCH rescue-tap")
-        val path = Path().apply { moveTo(tapX, tapY) }
-        val tap = GestureDescription.StrokeDescription(path, 0, RELEASE_SEGMENT_MS, false)
-        // No callback: the rescue tap is fire-and-forget, so it can never
-        // trigger further reactions or loops.
-        dispatchGesture(GestureDescription.Builder().addStroke(tap).build(), null, null)
-    }
+    private val terminatorCallback = object : GestureResultCallback() {
+        override fun onCompleted(gestureDescription: GestureDescription?) {
+            // The parked stroke actually played — the refresh missed. Rare;
+            // log it (it appears in the game as a stray micro-tap).
+            DebugLog.log("TERMINATOR_PLAYED (stray tap!)")
+            if (state == State.PARKED) {
+                state = State.IDLE
+                handler.removeCallbacks(refreshTerminator)
+            }
+        }
 
-    private fun dispatch(
-        stroke: GestureDescription.StrokeDescription,
-        callback: GestureResultCallback?
-    ) {
-        val gesture = GestureDescription.Builder().addStroke(stroke).build()
-        if (!dispatchGesture(gesture, callback, null)) {
-            DebugLog.log("DISPATCH_REJECTED (state=$state)")
-            activeStroke = null
-            keyHeld = false
-            state = State.IDLE
-            handler.removeCallbacks(rescue)
+        override fun onCancelled(gestureDescription: GestureDescription?) {
+            // Expected whenever a new hold or a refresh supersedes the parked
+            // terminator. Nothing to do.
         }
     }
 
