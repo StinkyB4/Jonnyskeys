@@ -7,12 +7,13 @@ import android.graphics.Point
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.util.Log
 import android.view.KeyEvent
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 
 /**
- * Intercepts hardware (USB) keyboard events system-wide and converts the mapped
+ * Intercepts hardware (USB or Bluetooth) keyboard events system-wide and converts the mapped
  * key into an injected touch at a configurable screen position, behaving like a
  * real finger: key down = touch down, key held = touch held, key up = touch up.
  *
@@ -38,6 +39,8 @@ import android.view.accessibility.AccessibilityEvent
 class KeyTapService : AccessibilityService() {
 
     companion object {
+        private const val TAG = "KeyTapService"
+
         // Maximum length of a single hold; the system caps gestures at 60s.
         private const val MAX_HOLD_MS = 59_000L
 
@@ -90,7 +93,7 @@ class KeyTapService : AccessibilityService() {
 
     /** Fires only if key-UP was never delivered: lift the finger anyway. */
     private val watchdog = Runnable {
-        DebugLog.log("WATCHDOG_FIRED (state=$state)")
+        Log.w(TAG, "Key-up not received; forcing release (state=$state)")
         requestRelease()
     }
 
@@ -98,7 +101,6 @@ class KeyTapService : AccessibilityService() {
     private val refreshTerminator = object : Runnable {
         override fun run() {
             if (state == State.PARKED) {
-                DebugLog.log("TERMINATOR_REFRESH")
                 dispatchTerminator()
                 handler.postDelayed(this, TERMINATOR_REFRESH_MS)
             }
@@ -108,7 +110,7 @@ class KeyTapService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         running = true
-        DebugLog.log("SERVICE_CONNECTED (single-stroke hold engine)")
+        Log.i(TAG, "Service connected")
     }
 
     override fun onDestroy() {
@@ -133,7 +135,6 @@ class KeyTapService : AccessibilityService() {
                 if (event.repeatCount == 0) {
                     if (!keyHeld) {
                         keyHeld = true
-                        DebugLog.log("KEY_DOWN (state=$state)")
                         armWatchdog(WATCHDOG_INITIAL_MS)
                         // Dispatching the hold also silently supersedes any
                         // parked terminator.
@@ -146,7 +147,6 @@ class KeyTapService : AccessibilityService() {
                 }
             }
             KeyEvent.ACTION_UP -> {
-                DebugLog.log("KEY_UP (state=$state)")
                 handler.removeCallbacks(watchdog)
                 requestRelease()
             }
@@ -168,7 +168,6 @@ class KeyTapService : AccessibilityService() {
             // (the game sees the touch end now) without playing any touch of
             // its own.
             state = State.PARKED
-            DebugLog.log("DISPATCH terminator (release)")
             dispatchTerminator()
             handler.postDelayed(refreshTerminator, TERMINATOR_REFRESH_MS)
         }
@@ -180,14 +179,13 @@ class KeyTapService : AccessibilityService() {
         val stroke = GestureDescription.StrokeDescription(path, 0, MAX_HOLD_MS, false)
         state = State.HOLDING
         lastPlantAt = SystemClock.uptimeMillis()
-        DebugLog.log("DISPATCH hold-down")
         if (!dispatchGesture(
                 GestureDescription.Builder().addStroke(stroke).build(),
                 holdCallback,
                 null
             )
         ) {
-            DebugLog.log("DISPATCH_REJECTED hold")
+            Log.w(TAG, "dispatchGesture rejected the hold stroke")
             state = State.IDLE
             keyHeld = false
         }
@@ -205,7 +203,7 @@ class KeyTapService : AccessibilityService() {
             )
         ) {
             // Very bad: the hold could run to its full duration. Retry once.
-            DebugLog.log("DISPATCH_REJECTED terminator; retrying")
+            Log.w(TAG, "dispatchGesture rejected the terminator; retrying")
             handler.post {
                 if (state == State.PARKED) dispatchTerminator()
             }
@@ -215,7 +213,6 @@ class KeyTapService : AccessibilityService() {
     private val holdCallback = object : GestureResultCallback() {
         override fun onCompleted(gestureDescription: GestureDescription?) {
             // The hold ran its full MAX_HOLD_MS and lifted on its own.
-            DebugLog.log("HOLD_COMPLETED (max duration reached, state=$state)")
             if (state == State.HOLDING) {
                 state = State.IDLE
                 if (keyHeld) {
@@ -229,14 +226,13 @@ class KeyTapService : AccessibilityService() {
             if (state != State.HOLDING) {
                 // Expected: we superseded this hold ourselves with a
                 // terminator (release) or a new hold.
-                DebugLog.log("HOLD_SUPERSEDED (expected)")
                 return
             }
             // External cancel (screen touched, system interference) while the
             // key is still held: re-plant once, but never faster than the
             // rate limit — a device that cancels everything must not turn
             // this into a rapid-fire loop.
-            DebugLog.log("HOLD_CANCELLED externally (keyHeld=$keyHeld)")
+            Log.w(TAG, "Hold cancelled externally (keyHeld=$keyHeld)")
             if (keyHeld &&
                 SystemClock.uptimeMillis() - lastPlantAt >= REPLANT_MIN_INTERVAL_MS
             ) {
@@ -251,7 +247,7 @@ class KeyTapService : AccessibilityService() {
         override fun onCompleted(gestureDescription: GestureDescription?) {
             // The parked stroke actually played — the refresh missed. Rare;
             // log it (it appears in the game as a stray micro-tap).
-            DebugLog.log("TERMINATOR_PLAYED (stray tap!)")
+            Log.w(TAG, "Parked terminator played as a stray tap")
             if (state == State.PARKED) {
                 state = State.IDLE
                 handler.removeCallbacks(refreshTerminator)

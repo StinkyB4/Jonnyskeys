@@ -1,7 +1,7 @@
 # Jonnyskeys
 
-Plug a USB keyboard into your Android phone and use it to play touch-only
-games — built for **Geometry Dash**, where one key is all you need.
+Connect a USB or Bluetooth keyboard to your Android phone and use it to
+play touch-only games — built for **Geometry Dash**, where one key is all you need.
 
 Android already recognizes USB keyboards (via USB-OTG), but Geometry Dash
 ignores key presses because it only listens for touches. Jonnyskeys bridges
@@ -32,8 +32,9 @@ The APK lands in `app/build/outputs/apk/debug/`. Install it with
 2. Tap **Open Accessibility settings** → find **Jonnyskeys key mapper** →
    turn it on (Android will warn that the service can perform gestures —
    that's exactly what it does, and all it does).
-3. Plug the USB keyboard into the phone (USB-C keyboards plug straight in;
-   USB-A keyboards need a cheap OTG adapter).
+3. Connect the keyboard: USB-C keyboards plug straight in, USB-A keyboards
+   need a cheap OTG adapter, and Bluetooth keyboards just pair in Settings.
+   USB has lower input latency than Bluetooth, which matters for hard levels.
 4. Open Geometry Dash and press **Space** — the cube jumps. Hold it to fly.
 
 ## Settings
