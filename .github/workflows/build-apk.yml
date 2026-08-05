@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - claude/usb-keyboard-android-mapping-3v471y
+      - claude/key-release-timing-9k0dyr
       - main
   workflow_dispatch:
 

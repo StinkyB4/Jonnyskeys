@@ -13,7 +13,9 @@ object Prefs {
     private const val KEY_KEYCODE = "keycode"
     private const val KEY_TAP_X_PCT = "tap_x_pct"
     private const val KEY_TAP_Y_PCT = "tap_y_pct"
-    private const val KEY_ENABLED = "enabled"
+
+    /** Public so the service can spot the master switch being turned off. */
+    const val KEY_ENABLED = "enabled"
 
     fun get(context: Context): SharedPreferences =
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE)

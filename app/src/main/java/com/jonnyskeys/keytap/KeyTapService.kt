@@ -2,8 +2,10 @@ package com.jonnyskeys.keytap
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
+import android.content.SharedPreferences
 import android.graphics.Path
 import android.graphics.Point
+import android.hardware.input.InputManager
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -33,8 +35,17 @@ import android.view.accessibility.AccessibilityEvent
  *   while parked it is refreshed (re-dispatched, which silently cancels the
  *   old one) long before its delay elapses. The next real key press also
  *   supersedes it silently.
- * - A watchdog force-releases if the key-UP event is lost, using auto-repeat
- *   as a "still physically held" heartbeat.
+ *
+ * Nothing here releases the touch on a timer. The hold ends when the physical
+ * key comes up, and only then. Key auto-repeat is NOT used as a heartbeat:
+ * repeats are synthesized downstream of the accessibility input filter, so a
+ * consumed key often produces none at all, and treating their absence as
+ * "key released" cut every hold short after a second or two.
+ *
+ * The stuck-finger cases the timer used to cover are handled by evidence
+ * instead of by the clock: the keyboard disconnecting, the mapping being
+ * switched off, the service being interrupted, or a fresh key-down arriving
+ * while a hold is still active (which proves the previous key-UP was lost).
  */
 class KeyTapService : AccessibilityService() {
 
@@ -56,10 +67,12 @@ class KeyTapService : AccessibilityService() {
         // machine-gun loop of touch-downs again.
         private const val REPLANT_MIN_INTERVAL_MS = 100L
 
-        // Watchdog for a lost key-UP. Generous initial window so genuine long
-        // holds are never cut short if auto-repeat is late or sparse.
-        private const val WATCHDOG_INITIAL_MS = 1_500L
-        private const val WATCHDOG_REPEAT_MS = 400L
+        // A hold that survives its full MAX_HOLD_MS is renewed so the finger
+        // stays down. Backstop against a permanently stuck touch if a key-UP
+        // is lost and no other evidence ever arrives: after this many
+        // full-length renewals (~5 minutes of unbroken hold, far longer than
+        // any real one) the finger lifts. Any key event resets the count.
+        private const val MAX_HOLD_RENEWALS = 5
 
         /** Set while the service is connected, so the UI can show live status. */
         @Volatile
@@ -82,8 +95,14 @@ class KeyTapService : AccessibilityService() {
 
     private var state = State.IDLE
 
-    /** True from key-down until key-up (or watchdog release). */
+    /** True from key-down until key-up. */
     private var keyHeld = false
+
+    /** Input device the current hold came from, so an unplug can end it. */
+    private var heldDeviceId = -1
+
+    /** Full-length hold renewals since the last key event (see MAX_HOLD_RENEWALS). */
+    private var holdRenewals = 0
 
     /** When the hold stroke was last dispatched (re-plant rate limiting). */
     private var lastPlantAt = 0L
@@ -91,11 +110,25 @@ class KeyTapService : AccessibilityService() {
     private var tapX = 0f
     private var tapY = 0f
 
-    /** Fires only if key-UP was never delivered: lift the finger anyway. */
-    private val watchdog = Runnable {
-        Log.w(TAG, "Key-up not received; forcing release (state=$state)")
-        requestRelease()
+    /** A keyboard going away mid-hold is proof the key can never come up. */
+    private val inputDeviceListener = object : InputManager.InputDeviceListener {
+        override fun onInputDeviceAdded(deviceId: Int) {}
+
+        override fun onInputDeviceChanged(deviceId: Int) {}
+
+        override fun onInputDeviceRemoved(deviceId: Int) {
+            if (keyHeld && deviceId == heldDeviceId) {
+                Log.w(TAG, "Keyboard disconnected while the key was held; releasing")
+                requestRelease()
+            }
+        }
     }
+
+    /** Switching the mapping off mid-hold must not leave the finger down. */
+    private val prefsListener =
+        SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == Prefs.KEY_ENABLED && !Prefs.enabled(this)) requestRelease()
+        }
 
     /** Keeps the parked terminator fresh so its stroke never actually plays. */
     private val refreshTerminator = object : Runnable {
@@ -110,12 +143,17 @@ class KeyTapService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         running = true
+        getSystemService(InputManager::class.java)
+            ?.registerInputDeviceListener(inputDeviceListener, handler)
+        Prefs.get(this).registerOnSharedPreferenceChangeListener(prefsListener)
         Log.i(TAG, "Service connected")
     }
 
     override fun onDestroy() {
         running = false
-        handler.removeCallbacks(watchdog)
+        getSystemService(InputManager::class.java)
+            ?.unregisterInputDeviceListener(inputDeviceListener)
+        Prefs.get(this).unregisterOnSharedPreferenceChangeListener(prefsListener)
         handler.removeCallbacks(refreshTerminator)
         super.onDestroy()
     }
@@ -124,45 +162,51 @@ class KeyTapService : AccessibilityService() {
         // Not used; this service only cares about key events.
     }
 
-    override fun onInterrupt() {}
+    override fun onInterrupt() {
+        // The system is telling the service to stop acting; don't leave a
+        // finger pinned to the screen.
+        requestRelease()
+    }
 
     override fun onKeyEvent(event: KeyEvent): Boolean {
         if (!Prefs.enabled(this)) return false
         if (event.keyCode != Prefs.keyCode(this)) return false
 
+        // Any event for the mapped key proves the keyboard is still talking to
+        // us, so the stuck-touch backstop starts over.
+        holdRenewals = 0
+
         when (event.action) {
             KeyEvent.ACTION_DOWN -> {
                 if (event.repeatCount == 0) {
-                    if (!keyHeld) {
-                        keyHeld = true
-                        armWatchdog(WATCHDOG_INITIAL_MS)
-                        // Dispatching the hold also silently supersedes any
-                        // parked terminator.
-                        handler.removeCallbacks(refreshTerminator)
-                        dispatchHold()
+                    if (keyHeld) {
+                        // A fresh press while we still believe the key is down
+                        // means the key-UP was lost. Re-sync so this press
+                        // registers as a new tap instead of being swallowed.
+                        Log.w(TAG, "Key-down while already held; re-syncing")
+                        requestRelease()
                     }
-                } else {
-                    // Auto-repeat: proof the key is still physically held.
-                    armWatchdog(WATCHDOG_REPEAT_MS)
+                    keyHeld = true
+                    heldDeviceId = event.deviceId
+                    // Dispatching the hold also silently supersedes any
+                    // parked terminator.
+                    handler.removeCallbacks(refreshTerminator)
+                    dispatchHold()
                 }
+                // Auto-repeats need no handling: the touch is already down and
+                // stays down until the key comes up.
             }
-            KeyEvent.ACTION_UP -> {
-                handler.removeCallbacks(watchdog)
-                requestRelease()
-            }
+            KeyEvent.ACTION_UP -> requestRelease()
         }
         // Consume the event so the key doesn't also reach the foreground app.
         return true
     }
 
-    private fun armWatchdog(delayMs: Long) {
-        handler.removeCallbacks(watchdog)
-        handler.postDelayed(watchdog, delayMs)
-    }
-
     private fun requestRelease() {
         if (!keyHeld) return
         keyHeld = false
+        heldDeviceId = -1
+        holdRenewals = 0
         if (state == State.HOLDING) {
             // Park a terminator: this supersedes the hold stroke immediately
             // (the game sees the touch end now) without playing any touch of
@@ -215,10 +259,19 @@ class KeyTapService : AccessibilityService() {
             // The hold ran its full MAX_HOLD_MS and lifted on its own.
             if (state == State.HOLDING) {
                 state = State.IDLE
-                if (keyHeld) {
-                    // Key is still physically down: put the finger back.
-                    dispatchHold()
+                if (!keyHeld) return
+                if (holdRenewals >= MAX_HOLD_RENEWALS) {
+                    // Minutes of unbroken hold with no key event at all: the
+                    // key-UP was almost certainly lost. Stop renewing.
+                    Log.w(TAG, "Hold renewed $holdRenewals times with no key event; releasing")
+                    keyHeld = false
+                    heldDeviceId = -1
+                    holdRenewals = 0
+                    return
                 }
+                // Key is still physically down: put the finger back.
+                holdRenewals++
+                dispatchHold()
             }
         }
 
