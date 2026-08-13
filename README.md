@@ -104,6 +104,10 @@ targetSdk 35). What you need to do, in order:
 
 - The mapped key is consumed system-wide while the service is on, so flip
   **Mapping active** off if you need that key for typing.
+- The touch is held for exactly as long as the key is physically down —
+  nothing lifts it on a timer, so ship and wave sections work at any length.
+  It also lifts if the keyboard disconnects or you switch **Mapping active**
+  off mid-hold, so a touch can't get stuck on screen.
 - Minimum Android version: 8.0 (API 26).
 - The service declares `canPerformGestures` and key-event filtering only —
   it does not read screen content.
